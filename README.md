@@ -1,3 +1,7 @@
+Forked for clean-up of code for inclusion in [Warp-Firmware](https://github.com/ajsalkeld/warp-firmware/).
+x86 and other build options removed. `integer.h` removed. Private functions made static and inline-able 
+functions inlined.
+
 # ulibSD
 It's a library for use SD cards in SPI mode with uControllers, entirely written
 in C. This library can work with SD cards and also has the possibility to
