@@ -1,62 +1,17 @@
 /*
- *  File: sd_io.h
- *  Author: Nelson Lombardo
- *  Year: 2015
- *  e-mail: nelson.lombardo@gmail.com
- *  License at the end of file.
+ * sd_io.h: High-level methods for SD-Card interaction.
+ * See LICENSE.
  */
- 
+
 #ifndef _SD_IO_H_
 #define _SD_IO_H_
 
-/*****************************************************************************/
-/* Configurations                                                            */
-/*****************************************************************************/
-//#define _M_IX86           // For use with x86 architecture
-#define SD_IO_WRITE
-//#define SD_IO_WRITE_WAIT_BLOCKER
-#define SD_IO_WRITE_TIMEOUT_WAIT 250
-
-//#define SD_IO_DBG_COUNT
-/*****************************************************************************/
-
-#if defined(_M_IX86)
-
-#include <stdio.h>
-#include "integer.h"
-
-/* Results of SD functions */
-typedef enum {
-    SD_OK = 0,      /* 0: Function succeeded    */
-    SD_NOINIT       /* 1: SD not initialized    */
-    SD_ERROR,       /* 2: Disk error            */
-    SD_PARERR,      /* 3: Invalid parameter     */
-    SD_BUSY,        /* 4: Programming busy      */
-    SD_REJECT       /* 5: Reject data           */
-} SDRESULTS;
-
-#ifdef SD_IO_DBG_COUNT
-typedef struct _DBG_COUNT {
-    WORD read;
-    WORD write;
-} DBG_COUNT;
-#endif
-
-/* SD device object */
-typedef struct _SD_DEV {
-    BOOL mount;
-    BYTE cardtype;
-    char fn[20]; /* dd if=/dev/zero of=sim_sd.raw bs=1k count=0 seek=8192 */
-    FILE *fp;
-    DWORD last_sector;
-#ifdef SD_IO_DBG_COUNT
-    DBG_COUNT debug;
-#endif
-} SD_DEV;
-
-#else // For use with uControllers
+#include <stdint.h>
 
 #include "spi_io.h" /* Provide the low-level functions */
+
+#define SD_IO_WRITE_TIMEOUT_WAIT 250
+
 
 /* Definitions of SD commands */
 #define CMD0    (0x40+0)        /* GO_IDLE_STATE            */
@@ -94,25 +49,12 @@ typedef enum {
     SD_NORESPONSE   /* 6: No response           */
 } SDRESULTS;
 
-#ifdef SD_IO_DBG_COUNT
-typedef struct _DBG_COUNT {
-    WORD read;
-    WORD write;
-} DBG_COUNT;
-#endif
-
-
 /* SD device object */
 typedef struct _SD_DEV {
-    BOOL mount;
-    BYTE cardtype;
-    DWORD last_sector;
-#ifdef SD_IO_DBG_COUNT
-    DBG_COUNT debug;
-#endif
+    uint8_t mount;
+    uint8_t cardtype;
+    uint16_t last_sector;
 } SD_DEV;
-
-#endif
 
 /*******************************************************************************
  * Public Methods - Direct work with SD card                                   *
@@ -149,39 +91,3 @@ SDRESULTS SD_Write (SD_DEV *dev, void *dat, DWORD sector);
 SDRESULTS SD_Status (SD_DEV *dev);
 
 #endif
-
-// «sd_io.h» is part of:
-/*----------------------------------------------------------------------------/
-/  ulibSD - Library for SD cards semantics            (C)Nelson Lombardo, 2015
-/-----------------------------------------------------------------------------/
-/ ulibSD library is a free software that opened under license policy of
-/ following conditions.
-/
-/ Copyright (C) 2015, ChaN, all right reserved.
-/
-/ 1. Redistributions of source code must retain the above copyright notice,
-/    this condition and the following disclaimer.
-/
-/ This software is provided by the copyright holder and contributors "AS IS"
-/ and any warranties related to this software are DISCLAIMED.
-/ The copyright owner or contributors be NOT LIABLE for any damages caused
-/ by use of this software.
-/----------------------------------------------------------------------------*/
-
-// Derived from Mister Chan works on FatFs code (http://elm-chan.org/fsw/ff/00index_e.html):
-/*----------------------------------------------------------------------------/
-/  FatFs - FAT file system module  R0.11                 (C)ChaN, 2015
-/-----------------------------------------------------------------------------/
-/ FatFs module is a free software that opened under license policy of
-/ following conditions.
-/
-/ Copyright (C) 2015, ChaN, all right reserved.
-/
-/ 1. Redistributions of source code must retain the above copyright notice,
-/    this condition and the following disclaimer.
-/
-/ This software is provided by the copyright holder and contributors "AS IS"
-/ and any warranties related to this software are DISCLAIMED.
-/ The copyright owner or contributors be NOT LIABLE for any damages caused
-/ by use of this software.
-/----------------------------------------------------------------------------*/

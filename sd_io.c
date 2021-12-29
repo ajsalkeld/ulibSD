@@ -1,40 +1,11 @@
 /*
- *  File: sd_io.c
- *  Author: Nelson Lombardo
- *  Year: 2015
- *  e-mail: nelson.lombardo@gmail.com
- *  License at the end of file.
+ * sd_io.c: High-level methods for SD-Card interaction.
+ * See LICENSE.
  */
 
 #include "sd_io.h"
-
-#ifdef _M_IX86  // For use over x86
-/*****************************************************************************/
-/* Private Methods Prototypes - Direct work with PC file                     */
-/*****************************************************************************/
-
-/**
- * \brief Get the total numbers of sectors in SD card.
- * \param dev Device descriptor.
- * \return Quantity of sectors. Zero if fail.
- */
-DWORD __SD_Sectors (SD_DEV* dev);
-
-/*****************************************************************************/
-/* Private Methods - Direct work with PC file                                */
-/*****************************************************************************/
-
-DWORD __SD_Sectors (SD_DEV *dev)
-{
-    if (dev->fp == NULL) return(0); // Fail
-    else {
-        fseek(dev->fp, 0L, SEEK_END);
-        return (((DWORD)(ftell(dev->fp)))/((DWORD)512)-1);
-    }
-}
-#else   // For use with uControllers   
 /******************************************************************************
- Private Methods Prototypes - Direct work with SD card
+ Private Methods - Direct work with SD card
 ******************************************************************************/
 
 /**
@@ -42,23 +13,29 @@ DWORD __SD_Sectors (SD_DEV *dev)
     \param e Exponent.
     \return Math function result.
 */
-DWORD __SD_Power_Of_Two(BYTE e);
+static inline uint32_t __SD_Power_Of_Two(uint8_t e)
+{
+    return ((uint32_t) 1) << e;
+}
 
 /**
      \brief Assert the SD card (SPI CS low).
  */
-inline void __SD_Assert (void);
+#define __SD_Assert(void) SPI_CS_Low()
 
 /**
     \brief Deassert the SD (SPI CS high).
  */
-inline void __SD_Deassert (void);
+#define __SD_Deassert(void) SPI_CS_High()
 
 /**
     \brief Change to max the speed transfer.
     \param throttle
  */
-void __SD_Speed_Transfer (BYTE throttle);
+static void __SD_Speed_Transfer(uint8_t throttle) {
+    if (throttle == HIGH) SPI_Freq_High();
+    else SPI_Freq_Low();
+}
 
 /**
     \brief Send SPI commands.
@@ -66,51 +43,10 @@ void __SD_Speed_Transfer (BYTE throttle);
     \param arg Argument to send.
     \return R1 response.
  */
-BYTE __SD_Send_Cmd(BYTE cmd, DWORD arg);
-
-/**
-    \brief Write a data block on SD card.
-    \param dat Storage the data to transfer.
-    \param token Inidicates the type of transfer (single or multiple).
- */
-SDRESULTS __SD_Write_Block(SD_DEV *dev, void *dat, BYTE token);
-
-/**
-    \brief Get the total numbers of sectors in SD card.
-    \param dev Device descriptor.
-    \return Quantity of sectors. Zero if fail.
- */
-DWORD __SD_Sectors (SD_DEV *dev);
-
-/******************************************************************************
- Private Methods - Direct work with SD card
-******************************************************************************/
-
-DWORD __SD_Power_Of_Two(BYTE e)
+static uint8_t __SD_Send_Cmd(uint8_t cmd, uint32_t arg)
 {
-    DWORD partial = 1;
-    BYTE idx;
-    for(idx=0; idx!=e; idx++) partial *= 2;
-    return(partial);
-}
-
-inline void __SD_Assert(void){
-    SPI_CS_Low();
-}
-
-inline void __SD_Deassert(void){
-    SPI_CS_High();
-}
-
-void __SD_Speed_Transfer(BYTE throttle) {
-    if(throttle == HIGH) SPI_Freq_High();
-    else SPI_Freq_Low();
-}
-
-BYTE __SD_Send_Cmd(BYTE cmd, DWORD arg)
-{
-    BYTE crc, res;
-    // ACMD«n» is the command sequense of CMD55-CMD«n»
+    uint8_t crc, res;
+    // ACMD«n» is the command sequence of CMD55-CMD«n»
     if(cmd & 0x80) {
         cmd &= 0x7F;
         res = __SD_Send_Cmd(CMD55, 0);
@@ -125,10 +61,10 @@ BYTE __SD_Send_Cmd(BYTE cmd, DWORD arg)
 
     // Send complete command set
     SPI_RW(cmd);                        // Start and command index
-    SPI_RW((BYTE)(arg >> 24));          // Arg[31-24]
-    SPI_RW((BYTE)(arg >> 16));          // Arg[23-16]
-    SPI_RW((BYTE)(arg >> 8 ));          // Arg[15-08]
-    SPI_RW((BYTE)(arg >> 0 ));          // Arg[07-00]
+    SPI_RW((uint8_t)(arg >> 24));          // Arg[31-24]
+    SPI_RW((uint8_t)(arg >> 16));          // Arg[23-16]
+    SPI_RW((uint8_t)(arg >> 8 ));          // Arg[15-08]
+    SPI_RW((uint8_t)(arg >> 0 ));          // Arg[07-00]
 
     // CRC?
     crc = 0x01;                         // Dummy CRC and stop
@@ -147,50 +83,51 @@ BYTE __SD_Send_Cmd(BYTE cmd, DWORD arg)
     return(res);
 }
 
-SDRESULTS __SD_Write_Block(SD_DEV *dev, void *dat, BYTE token)
+/**
+    \brief Write a data block on SD card.
+    \param dat Storage the data to transfer.
+    \param token Inidicates the type of transfer (single or multiple).
+ */
+static SDRESULTS __SD_Write_Block(SD_DEV *dev, void *dat, uint8_t token)
 {
-    WORD idx;
-    BYTE line;
+    uint16_t idx;
+    uint8_t line;
     // Send token (single or multiple)
     SPI_RW(token);
     // Single block write?
     if(token != 0xFD)
     {
         // Send block data
-        for(idx=0; idx!=SD_BLK_SIZE; idx++) SPI_RW(*((BYTE*)dat + idx));
+        for(idx=0; idx!=SD_BLK_SIZE; idx++) SPI_RW(*((uint8_t*)dat + idx));
         /* Dummy CRC */
         SPI_RW(0xFF);
         SPI_RW(0xFF);
         // If not accepted, returns the reject error
         if((SPI_RW(0xFF) & 0x1F) != 0x05) return(SD_REJECT);
     }
-#ifdef SD_IO_WRITE_WAIT_BLOCKER
-    // Waits until finish of data programming (blocked)
-    while(SPI_RW(0xFF)==0);
-    return(SD_OK);
-#else
     // Waits until finish of data programming with a timeout
     SPI_Timer_On(SD_IO_WRITE_TIMEOUT_WAIT);
     do {
         line = SPI_RW(0xFF);
     } while((line==0)&&(SPI_Timer_Status()==TRUE));
     SPI_Timer_Off();
-#ifdef SD_IO_DBG_COUNT
-    dev->debug.write++;
-#endif
     if(line==0) return(SD_BUSY);
     else return(SD_OK);
-#endif
 }
 
-DWORD __SD_Sectors (SD_DEV *dev)
+/**
+    \brief Get the total numbers of sectors in SD card.
+    \param dev Device descriptor.
+    \return Quantity of sectors. Zero if fail.
+ */
+static uint32_t __SD_Sectors (SD_DEV *dev)
 {
-    BYTE csd[16];
-    BYTE idx;
-    DWORD ss = 0;
-    WORD C_SIZE = 0;
-    BYTE C_SIZE_MULT = 0;
-    BYTE READ_BL_LEN = 0;
+    uint8_t csd[16];
+    uint8_t idx;
+    uint32_t ss;
+    uint16_t C_SIZE = 0;
+    uint8_t C_SIZE_MULT = 0;
+    uint8_t READ_BL_LEN = 0;
     if(__SD_Send_Cmd(CMD9, 0)==0) 
     {
         // Wait for response
@@ -202,7 +139,6 @@ DWORD __SD_Sectors (SD_DEV *dev)
         SPI_Release();
         if(dev->cardtype & SDCT_SD1)
         {
-            ss = csd[0];
             // READ_BL_LEN[83:80]: max. read data block length
             READ_BL_LEN = (csd[5] & 0x0F);
             // C_SIZE [73:62]
@@ -234,7 +170,6 @@ DWORD __SD_Sectors (SD_DEV *dev)
         return (ss);
     } else return (0); // Error
 }
-#endif // Private methods for uC
 
 /******************************************************************************
  Public Methods - Direct work with SD card
@@ -242,23 +177,9 @@ DWORD __SD_Sectors (SD_DEV *dev)
 
 SDRESULTS SD_Init(SD_DEV *dev)
 {
-#if defined(_M_IX86)    // x86 
-    dev->fp = fopen(dev->fn, "r+");
-    if (dev->fp == NULL)
-        return (SD_ERROR);
-    else
-    {
-        dev->last_sector = __SD_Sectors(dev);
-#ifdef SD_IO_DBG_COUNT
-        dev->debug.read = 0;
-        dev->debug.write = 0;
-#endif
-        return (SD_OK);
-    }
-#else   // uControllers
-    BYTE n, cmd, ct, ocr[4];
-    BYTE idx;
-    BYTE init_trys;
+    uint8_t n, cmd, ct, ocr[4];
+    uint8_t idx;
+    uint8_t init_trys;
     ct = 0;
     for(init_trys=0; ((init_trys!=SD_INIT_TRYS)&&(!ct)); init_trys++)
     {
@@ -326,43 +247,17 @@ SDRESULTS SD_Init(SD_DEV *dev)
         dev->cardtype = ct;
         dev->mount = TRUE;
         dev->last_sector = __SD_Sectors(dev) - 1;
-#ifdef SD_IO_DBG_COUNT
-        dev->debug.read = 0;
-        dev->debug.write = 0;
-#endif
         __SD_Speed_Transfer(HIGH); // High speed transfer
     }
     SPI_Release();
     return (ct ? SD_OK : SD_NOINIT);
-#endif
 }
 
-SDRESULTS SD_Read(SD_DEV *dev, void *dat, DWORD sector, WORD ofs, WORD cnt)
+SDRESULTS SD_Read(SD_DEV *dev, void *dat, uint32_t sector, uint16_t ofs, uint16_t cnt)
 {
-#if defined(_M_IX86)    // x86
-    // Check the sector query
-    if((sector > dev->last_sector)||(cnt == 0)) return(SD_PARERR);
-    if(dev->fp!=NULL)
-    {
-        if (fseek(dev->fp, ((512 * sector) + ofs), SEEK_SET)!=0)
-            return(SD_ERROR);
-        else {
-            if(fread(dat, 1, (cnt - ofs),dev->fp)==(cnt - ofs))
-            {
-#ifdef SD_IO_DBG_COUNT
-                dev->debug.read++;
-#endif
-                return(SD_OK);
-            }
-            else return(SD_ERROR);
-        }
-    } else {
-        return(SD_ERROR);
-    }
-#else   // uControllers
     SDRESULTS res;
-    BYTE tkn;
-    WORD remaining;
+    uint8_t tkn;
+    uint16_t remaining;
     res = SD_ERROR;
     if ((sector > dev->last_sector)||(cnt == 0)) return(SD_PARERR);
     // Convert sector number to byte address (sector * SD_BLK_SIZE)
@@ -384,7 +279,7 @@ SDRESULTS SD_Read(SD_DEV *dev, void *dat, DWORD sector, WORD ofs, WORD cnt)
             }
             // I receive the data and I write in user's buffer
             do {
-                *(BYTE*)dat = SPI_RW(0xFF);
+                *(uint8_t*)dat = SPI_RW(0xFF);
                 dat++;
             } while(--cnt);
             // Skip remaining
@@ -395,35 +290,11 @@ SDRESULTS SD_Read(SD_DEV *dev, void *dat, DWORD sector, WORD ofs, WORD cnt)
         }
     }
     SPI_Release();
-#ifdef SD_IO_DBG_COUNT
-    dev->debug.read++;
-#endif
     return(res);
-#endif
 }
 
-#ifdef SD_IO_WRITE
-SDRESULTS SD_Write(SD_DEV *dev, void *dat, DWORD sector)
+SDRESULTS SD_Write(SD_DEV *dev, void *dat, uint32_t sector)
 {
-#if defined(_M_IX86)    // x86
-    // Query ok?
-    if(sector > dev->last_sector) return(SD_PARERR);
-    if(dev->fp != NULL)
-    {
-        if(fseek(dev->fp, SD_BLK_SIZE * sector, SEEK_SET)!=0)
-            return(SD_ERROR);
-        else {
-            if(fwrite(dat, 1, SD_BLK_SIZE, dev->fp)==SD_BLK_SIZE)
-            {
-#ifdef SD_IO_DBG_COUNT
-                dev->debug.write++;
-#endif
-                return(SD_OK);
-            }
-            else return(SD_ERROR);
-        }
-    } else return(SD_ERROR);
-#else   // uControllers
     // Query ok?
     if(sector > dev->last_sector) return(SD_PARERR);
     // Single block write (token <- 0xFE)
@@ -432,51 +303,9 @@ SDRESULTS SD_Write(SD_DEV *dev, void *dat, DWORD sector)
         return(__SD_Write_Block(dev, dat, 0xFE));
     else
         return(SD_ERROR);
-#endif
 }
-#endif
 
-SDRESULTS SD_Status(SD_DEV *dev)
+inline SDRESULTS SD_Status(void)
 {
-#if defined(_M_IX86)
-    return((dev->fp == NULL) ? SD_OK : SD_NORESPONSE);
-#else
     return(__SD_Send_Cmd(CMD0, 0) ? SD_OK : SD_NORESPONSE);
-#endif
 }
-
-// «sd_io.c» is part of:
-/*----------------------------------------------------------------------------/
-/  ulibSD - Library for SD cards semantics            (C)Nelson Lombardo, 2015
-/-----------------------------------------------------------------------------/
-/ ulibSD library is a free software that opened under license policy of
-/ following conditions.
-/
-/ Copyright (C) 2015, ChaN, all right reserved.
-/
-/ 1. Redistributions of source code must retain the above copyright notice,
-/    this condition and the following disclaimer.
-/
-/ This software is provided by the copyright holder and contributors "AS IS"
-/ and any warranties related to this software are DISCLAIMED.
-/ The copyright owner or contributors be NOT LIABLE for any damages caused
-/ by use of this software.
-/----------------------------------------------------------------------------*/
-
-// Derived from Mister Chan works on FatFs code (http://elm-chan.org/fsw/ff/00index_e.html):
-/*----------------------------------------------------------------------------/
-/  FatFs - FAT file system module  R0.11                 (C)ChaN, 2015
-/-----------------------------------------------------------------------------/
-/ FatFs module is a free software that opened under license policy of
-/ following conditions.
-/
-/ Copyright (C) 2015, ChaN, all right reserved.
-/
-/ 1. Redistributions of source code must retain the above copyright notice,
-/    this condition and the following disclaimer.
-/
-/ This software is provided by the copyright holder and contributors "AS IS"
-/ and any warranties related to this software are DISCLAIMED.
-/ The copyright owner or contributors be NOT LIABLE for any damages caused
-/ by use of this software.
-/----------------------------------------------------------------------------*/

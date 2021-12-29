@@ -8,9 +8,6 @@
 #ifndef _SPI_IO_H_
 #define _SPI_IO_H_
 
-#include "integer.h"        /* Type redefinition for portability */
-
-
 /******************************************************************************
  Public methods
  *****************************************************************************/
@@ -25,7 +22,7 @@ void SPI_Init (void);
     \param d Byte to send.
     \return Byte that arrived.
  */
-BYTE SPI_RW (BYTE d);
+uint8_t SPI_RW (uint8_t d);
 
 /**
     \brief Flush of SPI buffer.
@@ -56,13 +53,13 @@ void SPI_Freq_Low (void);
     \brief Start a non-blocking timer.
     \param ms Milliseconds.
  */
-void SPI_Timer_On (WORD ms);
+void SPI_Timer_On (uint16_t ms);
 
 /**
     \brief Check the status of non-blocking timer.
     \return Status, TRUE if timeout is not reach yet.
  */
-BOOL SPI_Timer_Status (void);
+uint8_t SPI_Timer_Status (void);
 
 /**
     \brief Stop of non-blocking timer. Mandatory.
